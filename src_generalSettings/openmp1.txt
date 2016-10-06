@@ -1,0 +1,32 @@
+openmp activated 
+Thread number: Thread number: 0string adress: 2string adress: 0x7ffd98d5db000x7fe0533ffe40
+
+Thread number: 0x1string adress: 0x7fe053c00e40
+return value 0
+Thread number: 0string adress: 0x7ffd98d5db00done with: 0
+Thread number: 0string adress: 0x7ffd98d5db00
+return value 0
+Thread number: 0x1string adress: 0x7fe053c00e40done with: 0
+Thread number: 0x1string adress: 0x7fe053c00e40
+return value 0
+Thread number: 0x2string adress: 0x7fe0533ffe40done with: 0
+Thread number: 0x2string adress: 0x7fe0533ffe40
+return value 0
+Thread number: 0x1string adress: 0x7fe053c00e40done with: 0
+Thread number: 0x1string adress: 0x7fe053c00e40
+return value 0
+Thread number: 0x2string adress: 0x7fe0533ffe40done with: 0
+Thread number: 0x2string adress: 0x7fe0533ffe40
+return value 0
+Thread number: 0string adress: 0x7ffd98d5db00done with: 0
+Thread number: 0string adress: 0x7ffd98d5db00
+return value 0
+Thread number: 0x1string adress: 0x7fe053c00e40done with: 0
+return value 0
+Thread number: 0x2string adress: 0x7fe0533ffe40done with: 0
+return value 0
+Thread number: 0string adress: 0x7ffd98d5db00done with: 0
+Thread number: 0string adress: 0x7ffd98d5db00
+return value 0
+Thread number: 0string adress: 0x7ffd98d5db00done with: 0
+hello - DONE with 0x7fe0

@@ -1,0 +1,47 @@
+#include <iostream>
+#include <fstream>
+ #include <omp.h>
+using namespace std;
+
+
+
+int main ()
+{
+    string outputfile("openmp1.txt");
+    ofstream out;
+    out.open(outputfile.c_str());
+
+    #ifdef _OPENMP
+        out << "openmp activated " << endl;
+        omp_set_num_threads(3);  // so without num_threads(3) -> limit alos the parallel for on 3 threads
+        #endif _OPENMP
+
+     int x ;
+    #ifdef _OPENMP
+    #pragma omp parallel for
+        #endif _OPENMP
+     for(int n=0; n<10; ++n)
+     {
+         string s("hello");
+             #ifdef _OPENMP
+         #pragma omp critical 
+        #endif _OPENMP
+        {
+        out << "Thread number: " << omp_get_thread_num() << "string adress: " << &s  << endl;
+        }
+        int x = system("../../../pop_simu/admixem-master/bin/admixemp ../../../pop_simu/admixem-master/examples/null_model/our_simu_null.cfg > foo_admixm.txt");
+        out << "return value "<< x << endl;
+            #ifdef _OPENMP
+     #pragma omp critical 
+             #endif _OPENMP
+        {
+        out << "Thread number: " << omp_get_thread_num() << "string adress: " << &s  << "done with: " << x << endl;
+        }
+     }
+    
+     out << "hello - DONE with " << x << endl;
+
+}
+
+//if pragma omp for parallel => launch 20x admixemp
+// if pramga omp parralle ...(3) => parallelize admixemp over 3 threads onyl

@@ -1,0 +1,51 @@
+#include <getopt.h>
+#include "generateFiles.h"
+
+/* SET PARAMETERS IF NEEDED
+ * shared across files: declared extern in generateFiles.h
+ */
+double randomSeed(0.2);
+int numbersOfMarkers(20);                // FV: 40000
+int chromoSize(500);                     // FV: 5000000
+int nChromo(8);
+float pop1AlleleFreqAvg(0.8);
+float pop1AlleleFreqStdDev(0.1);
+float pop2AlleleFreqAvg(0.8);
+float pop2AlleleFreqStdDev(0.1);
+int nRecombMeiosis(32);                  // recombination file  //4n => 1 per arm
+int factSamplePoint(20);
+
+
+int main (int argc, char * const argv[]) 
+{
+
+    string genomeF;
+
+    // RETRIEVE FROM COMMAND LINE
+    // if -g    => pass the genome file; if absent -> do random as Admixem
+    // if -s    => random seed (between 0 and 1), otherwise 0.2 by default
+    
+    while ((option_char = getopt (argc , argv, "g:s:")) != -1)
+    {
+        switch (option_char)
+        {  
+            case 'g': genomeF = optarg; break;
+            case 's': randomSeed = atof(optarg);break;
+        }
+    }
+    
+    
+    if(genomeF.empty())
+    {
+        createAdmixemMarkerRecF();   // generates "random" marker and recombination files as defined by Admixem
+
+    } else 
+    {
+        createCustomF(genomeF);     // create those files using custom positions as in nigra GFF
+    }
+    
+    return 0;
+}
+
+
+

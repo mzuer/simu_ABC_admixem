@@ -1,0 +1,32 @@
+openmp activated 
+Thread number: 0string adress: 0x7ffd4d406bf0
+Thread number: 2string adress: 0x7fadf6e5ce40
+Thread number: 1string adress: 0x7fadf765de40
+return value 0
+Thread number: 0string adress: 0x7ffd4d406bf0done with: 0
+Thread number: 0string adress: 0x7ffd4d406bf0
+return value 0
+Thread number: 2string adress: 0x7fadf6e5ce40done with: 0
+Thread number: 2string adress: 0x7fadf6e5ce40
+return value 0
+Thread number: 1string adress: 0x7fadf765de40done with: 0
+Thread number: 1string adress: 0x7fadf765de40
+return value 0
+Thread number: 0string adress: 0x7ffd4d406bf0done with: 0
+Thread number: 0string adress: 0x7ffd4d406bf0
+return value 0
+Thread number: 2string adress: 0x7fadf6e5ce40done with: 0
+Thread number: 2string adress: 0x7fadf6e5ce40
+return value 0
+Thread number: 1string adress: 0x7fadf765de40done with: 0
+Thread number: 1string adress: 0x7fadf765de40
+return value 0
+Thread number: 0string adress: 0x7ffd4d406bf0done with: 0
+Thread number: 0string adress: 0x7ffd4d406bf0
+return value 0
+Thread number: 1string adress: 0x7fadf765de40done with: 0
+return value 0
+Thread number: 2string adress: 0x7fadf6e5ce40done with: 0
+return value 0
+Thread number: 0string adress: 0x7ffd4d406bf0done with: 0
+hello - DONE with 32685

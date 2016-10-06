@@ -1,0 +1,561 @@
+#include "settings.h"  /* declare extern variables: model, geneF, markerF, recF, chromoF, nDemes, run, nSelGenes*/
+#include "my_math.h"   /* draw from distribution */
+#include "simu.h"
+#include "model.h"
+#include "summarystat.h"
+
+#include <string>
+#include <map>
+#include <array>
+#include <gsl/gsl_randist.h> /* draw from distribution */
+#include <boost/regex.hpp> /* for the regex*/
+#include <math.h>       /* exp */
+#include <time.h>  /* seed*/
+#include <algorithm>   /* sort */
+#include <iostream>
+#include <fstream>
+#include <stdio.h>
+#include <cstdlib>
+
+/* FOLLOWING FILES ARE CREATED VIA THIS SCRIPT:
+
+
+_config.cfg                 => configuration file for Admixem
+admixem_out.txt             => trash (overwritten), the stdoutput of Admixem
+GenX_markers.txt            => marker file output from Admixem
+GenX_genes.txt              => gene file output from Admixem
+_parametersValues.txt       => output to retrieve parameters for the ABC (1 line with coma-separated parameter values)
+
+*/
+     
+
+/* AVAILABLE FROM setttings.h AS INITIALIZED IN main.cpp
+string model;
+string geneF;
+string markerF;
+string recF;
+string chromoF;
+int nDemes;
+int run;
+int nSelGenes;
+ */
+ 
+/* AVAILABLE FROM model.h 
+string natSelFile;
+string sexSelFile;
+string phenoFile;
+ */
+ 
+ 
+
+
+ 
+ /*
+ ###### for the gene flow (MODEL 1 ONLY) : => set in simu.cpp (config file)
+
+hybFoo --- m*d1 ---> hyb1
+hybFoo --- m*d2 ---> hyb2
+hybFoo --- m*d3 ---> hyb3
+
+=> draw m in uniform distribution 
+
+how to find d1, d2, d3 ?
+
+equation from Austerlitz -> distribution defined by a single parameter 'beta'
+
+then function of distance : d1 = fct_beta(hyb1_distance) etc.
+
+=> draw beta in uniform distribution [0-10'000]
+
+*/
+ 
+using namespace std;
+
+extern string allParametersLine;
+
+
+/* SOME GENERAL PARAMETERS THAT MAY BE CHANGED IN FINAL VERSION <==================================================== */
+// LIMITS OF THE PRIORS
+static const int MAXGen = 300;
+
+static const double MINshape = 0.0;
+static const double MAXshape = 15000.0;
+
+//static const float MAXMagn = 0.5;
+//static const float MINMagn = 0.001;
+static const int MINCarrying = 100;
+static const int MAXCarrying = 500;
+static const int hybMINCarrying = 100;
+static const int hybMAXCarrying = 500;
+static const double DIST = 100.0;            // ??????????????????????????????????????????????????
+
+//static double meanGF = 0.5;
+//static double sdGF = 0.1;
+static const double MINMigIntercept = 0.2;
+static const double MAXMigIntercept = 0.8;
+
+//static const double MINgf0 = 0.1;         // not needed anymore: GF0 is set to 1 because we want that hybFoo gets empty at each generation
+//static const double MAXgf0 = 0.9;
+
+static const double MEANgf = 0.5;           // for model0 only 
+static const double SDgf = 0.01;
+
+static const double MINpop1GF = 0.3;
+static const double MAXpop1GF = 0.6;
+
+static const double SD_GF_modifiers = 0.01;
+
+/* FUNCTION DEFINITIONS FOR THE PRIORS */
+
+/*   # draw params from priors (except generations, all uniform)
+
+1) number of generations: 
+=> beta distribution (because introgression event of relatively recent origin)  ??  1 < N_gen < 300
+        ini_generations = round(300*rbeta(1, 1, 2), 0) #number of generations
+2) shape of dispersal kernel (0 < c < 15 000)
+        shape = runif(1, min = 1, max = 15000) #ABC: 1 - 15000
+3) carrying capacity  (prior: 1 < NAe.triuncialis < 5000)
+        N_aegil = runif(1, min = 300, max = 5000) #ABC: 300 - 5000 (cannot go below 300 because of subsampling issues)
+4) proportion of migrants ??? TODO ?? WHAT IT IS ?????
+        magnitude = runif(1, min = .001, max = 0.5) #MAX MUST BE 0.9 !!! (cannot go above 0.5 because of subsampling issues)
+
+## Get distances of pops to cultivations
+data = read.delim(input, header = T, row.names = 1)
+# store them in a vector
+x = data[, 1]
+### Compute dispersal probabilities
+# compute the dispersal proba, using these distances
+disp.proba = expfamily(x, shape)
+# standardize these proba, so that they sum to one (they will still scale identically)
+disp.proba = magnitude * disp.proba / sum(disp.proba)
+  
+NOT TAKEN: selfing rate
+  s_aegil = runif(1, min = .05, max = 1) ### WARNING: Self = UNIF[0-1] here
+TODO pas compris l'histoire de magnitude ?? magnitude *  
+TODO: in our case, none carrying capacity is fixed ???
+
+
+// PROTOTYPES AND INLINE
+string getPrior(string);
+
+
+inline double dispersalPrior ()
+{
+    double shape = getFromUnif(1, MAXShape);
+    double magnitude = getFromUnif(MINMagn, MAXMagn);
+    return (magnitude * dispersalExpFunc(DIST, shape));
+}
+
+
+
+*/ 
+
+/* 
+    => the first hybrid population is only created create a hybrid population (hybFoo ~hyb0)
+    => hyb1 is the pop which is nearest the coast, then hyb2, etc.
+*/
+
+//extern gsl_rng * rng;
+
+
+// PROTOTYPES AND INLINE
+string getPrior(string);
+
+inline double dispersalExpFunc (double dist, double shape) // Austerlitz 2004 (Using genetic markers to estimate the pollen dispersal curve)
+{
+  return((1 / (2 * M_PI * pow(shape,2))) * exp(-dist / shape));
+}
+
+
+string getPrior(string param)
+{
+    if(param == "RandomSeed")
+    {
+        srand(time(NULL));          
+        int seed = rand() % 1000000;            // seed ?????????????????????????????????????? 0-1
+        return ("0."+to_string(seed));
+    }
+    // CARRYING CAPACITY - PARENTAL POPS
+    if( (param == "pop1_size_limit") || (param == "pop2_size_limit"))
+    {
+        return to_string(gsl_ran_flat(rd, MINCarrying, MAXCarrying));
+        //return to_string(getFromUnif(MINCarrying, MAXCarrying));
+    }
+    // CARRYING CAPACITY - HYBRID POPS
+    boost::regex expr_size_limit{"hybrid\\d*_size_limit"};  // should match hybrid_size_limit or hybrid1_size_limit, etc.
+    if(boost::regex_match(param, expr_size_limit))
+    {
+        //return to_string(getFromUnif(hybMINCarrying, hybMAXCarrying));
+        return to_string(gsl_ran_flat(rd, hybMINCarrying, hybMAXCarrying));
+    }
+    if(param == "generations")
+    {
+          return("100");
+          //return to_string(round(300*gsl_ran_beta(rd,1,2))); // ???????????????????????????????????????????!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+//        return to_string(round(300*getFromBeta(1,2))); // ???????????????????????????????????????????!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    }
+
+    return "NA"; // should never happen
+}
+
+
+/* MAP OF ALL ENTRIES OF ADMIXEM CONFIGURATION FILE */
+//NA => what is updated in all simu, whatever the model:
+//"pop1_size_limit", "pop2_size_limit", "hybrid_size_limit", "generations, RandomSeed"
+static map<string, string> settings = { 
+    {"DisableOutputForFirst3Gens", "yes"},  // no default output for the first 3 generations
+    {"RandomSeed", "NA"},                  
+    {"NumThreads", "2"},                   //// number of threads ????  because alrady multithreaded in main ??
+    {"UseUniformRec", "yes"},
+    {"IgnoreMarkerFreq", "yes"},
+    {"DumpNatSelProb", "On"},
+    {"MarkerOutput", "On"},
+    {"samplefreq", "50"},                   // sample every X generations
+    {"generations", "NA"},                 // number of generations
+    //files and folders
+/* FROM model.cpp    string phenoOutFile("data/"+model_name +"/"+ model_name +"_"+phenoFile);     */
+    {"MarkerFile", "data/markers.txt"},     //always the same
+    {"MarkerProbFile", "data/rec.txt"},     //always the same
+    {"GeneFile", "data/"+model+"/"+model+"_"+geneFile},         //model specific
+    {"PhenotypeFile", "data/"+model+"/"+model+"_"+phenoFile},
+    {"OutputFolder", "NA"},            // folder is created by Admixem -> is changed in createConfigFile() (simu specific)
+    {"NaturalSelection", "data/"+model+"/"+model+"_"+natSelFile},
+    {"SexualSelection", "data/"+model+"/"+model+"_"+sexSelFile},
+    ////pop features
+    {"pop1_name", "nigra"},
+    {"pop1_ancestry_label", "x"},       // !!! parental pop always x (pop1) and y (pop2) -> used inr summary stat !!! DO NOT CHANGE
+    {"pop1_init_size", "500"},
+    {"pop1_size_limit","1000"},            //  initial and max size of pop1 and pop2 are not important
+    {"pop1_male_ratio", "0.5"},            // they can be kept as small as possible
+    {"pop2_name", "rapa"},
+    {"pop2_ancestry_label", "y"},
+    {"pop2_init_size"," 500"},
+    {"pop2_size_limit", "1000"},
+    {"pop2_male_ratio", "0.5"},
+    {"hybrid_name", "hybFoo"},              // this serves to populate the other hybrid pop
+    {"hybrid_size_limit", "NA"},
+    //migration
+    {"UseBinomMigrateRate", "yes"},           // if yes: betw. 0-1", ,otherwise number of individuals
+    {"migration_only_first_gen", "no"},
+    {"pop1_to_pop2", "0"},
+    {"pop1_to_hybrid", "0.5"}, // will be drawn from prior
+    {"pop2_to_hybrid", "0.5"},    // because we don't want that rapa invades the pop
+    {"gen0_pop1_to_hybrid", "0.5"},          //genX    
+    {"gen0_pop2_to_hybrid", "0.5"},
+    {"hybrid_to_pop1", "0"},
+    {"hybrid_to_pop2", "0"},
+    //// female reprod
+    {"SampleMate", "50"},                   // random mating
+    {"avg_female_gamete", "10"},
+    {"std_female_gamete", "3.16"},
+    {"kids_per_female_func", "Poisson"},
+    {"samplegens", ""}
+};
+
+
+/* CONSTRUCTORS */ //   => DRAW FROM PRIORS HERE !!!
+
+Simu::Simu(Model& current_model, string run) : simu_model(current_model), simIterN(run), nHybPop(current_model.getTotalHybPop())
+{
+
+    if(distance_list.empty())  // user gave the number of demes, not a list of distances
+    {
+        for(int i = 0; i < nDist; i++)
+        {
+            distance_list.push_back(i*(100.0/(double)(nDist+1)));
+        }
+    } else 
+    {
+        sort(distance_list.begin(), distance_list.end());   // ensure it is sorted
+    }
+
+    /**/ // => FOR DEBUG
+    ofstream outControl;
+    outControl.open(controlFile.c_str(), fstream::app|fstream::out);  // extern controlFile from settings.h, set in main.cpp
+    outControl << "Start initializing simu with following parameters:" << endl;
+    outControl << "Model: " << model << endl << "Number of pop: " << nHybPop << endl;
+    outControl << "Simu ID: " << run << endl;
+    outControl << " For following distance: " << endl;
+    for(auto i: distance_list)
+    {
+        outControl << to_string(i) << endl;
+    }
+    /**/ // <= FOR DEBUG
+
+
+    /* initialization of settings common to all models */
+    // => name
+    // => carrying capacity
+    const int commonParams = 5;
+    // hybrid_ => hybFoo => which serves as "parental" pop
+    array<string, commonParams> param_list = {"pop1_size_limit", "pop2_size_limit", "hybrid_size_limit", "generations", "RandomSeed"};
+    for(string param: param_list)
+    {
+        simu_parameters[param] = getPrior(param); // here we draw from priors
+        allParametersLine += ","+param +"="+simu_parameters[param];
+        outControl << "For param: " << param << ", draw from prior: " << simu_parameters[param] << endl;
+    }   
+    
+    // hybrid pop: carrying capacity and name
+    // 1 hybrid pop was already initialized (the 1st hybrid pop is just: hybrid_ ) => this hybrid serves as "parental" pop !!!
+    string hyb_carrying, hyb_name, migToHyb;
+    int nHyb(1);
+    for(int i = 0; i < distance_list.size(); i++)
+    {
+        for(int j = 0; j < nbr_pop_list[i]; j++)
+        {
+            // set the NAME for each hybrid pop (=> must be the same as in selection file set in model.cpp)
+            hyb_name = "hybrid" + to_string(nHyb) + "_name";
+            char ith_pop = (j < 26) ? 97 + j: 65 + j - 26;                  //char for hyb1a, hyb1b, etc.
+            simu_parameters[hyb_name] = "hyb" + to_string(i+1) + ith_pop;            
+            outControl << "For hyb" + to_string(i+1) + ith_pop << " draw carrying capacity: " ;
+            // set the CARRYING CAPACITY for each hybrid pop
+            hyb_carrying = "hybrid" + to_string(nHyb) + "_size_limit";
+            simu_parameters[hyb_carrying] = getPrior(hyb_carrying);
+            allParametersLine += ","+hyb_carrying +"="+simu_parameters[hyb_carrying];
+            outControl << "For param: " << hyb_carrying << ", draw from prior: " << simu_parameters[hyb_carrying] << endl;
+            nHyb++;
+        }
+    }   
+    
+    // pop1 to hybrid pop migration is always the same for both models (continuous migration, at each generation)
+    //double pop1GF = getFromUnif(MINpop1GF, MAXpop1GF);  // in model0 : no modifier of gene flow
+    double pop1GF = gsl_ran_flat(rd, MINpop1GF, MAXpop1GF);  // in model0 : no modifier of gene flow (rd defined extern in settings.h)
+
+    for(int nHyb = 1; nHyb < nHybPop + 2 ; nHyb++) // NOW DEFINE FOR EACH HYBRID POP THAT IS NOT hybFoo (hybrid_)
+    {         
+        string migP1ToHyb = "pop1_to_hybrid" + to_string(nHyb); 
+        simu_parameters[migP1ToHyb] = to_string(pop1GF);
+        allParametersLine += ","+migP1ToHyb +"="+simu_parameters[migP1ToHyb];  // this is to print parameter values for the ABC
+        outControl << "For param: " << migP1ToHyb << ", set: " << simu_parameters[migP1ToHyb] << endl;        
+    }    
+    
+    /* model specific initialization */  
+    if(current_model.getModelName() == "model0")
+    {    
+        vector  <double>  all_GF;
+        double sum_GF = 0;
+        // MODEL 0 - GENE FLOW IS THE SAME AT ALL DISTANCES
+        // draw around the mean and rescale to 1
+        for(int i = 0; i < distance_list.size(); i++)
+        {
+            for(int j = 0; j < nbr_pop_list[i]; j++)
+            {
+                double GF = getFromNormal(MEANgf, SDgf);
+                sum_GF += GF;
+                all_GF.push_back(GF);  // in model0 : no modifier of gene flow  
+            }   
+        }
+        outControl << "Model0 - GF for all pop (before rescaling): " << endl;
+        for(auto i : all_GF)
+        {
+            outControl << i << "\t";
+        } 
+        // now rescale that they sum up to 1:
+        for_each(all_GF.begin(), all_GF.end(), [sum_GF](double &n){ n = n/sum_GF; });
+        outControl << endl << "Model0 - GF for all pop (after rescaling): " << endl;
+        for(auto i : all_GF)
+        {
+            outControl << i << "\t";
+        }  
+        outControl << endl;
+        for(int nHyb = 1; nHyb < nHybPop + 2 ; nHyb++) // NOW DEFINE FOR EACH HYBRID POP THAT IS NOT hybFoo (hybrid_)
+        {         
+            migToHyb = "hybrid_to_hybrid" + to_string(nHyb); 
+            simu_parameters[migToHyb] = to_string(all_GF[nHyb-1]);
+            allParametersLine += ","+migToHyb +"="+simu_parameters[migToHyb];  // this is to print parameter values for the ABC
+            outControl << "For param: " << migToHyb << ", set: " << simu_parameters[migToHyb] << endl;        
+        }
+    }  
+    else if(current_model.getModelName() == "model1")
+    {
+        // MODEL 1 - GENE FLOW IS HIGHER NEAR THE COAST (GF_hyb1 >>> GF_hyb4)
+        // gene flow at a given distance is the same for all populations that are at the same distance
+        // gene flow:
+        /*hybFoo --- m*d1 ---> hyb1
+        => draw m in uniform distribution 
+        => d1 = fct_beta(hyb1_distance) etc.
+        */        
+//        double GF0 = getFromUnif(MINgf0, MAXgf0);
+        double GF0 = 1.0;                               // as we want that hybFoo gets empty at each generation
+//        double shape = getFromUnif(MINshape, MAXshape);    
+        double shape = gsl_ran_flat(rd, MINshape, MAXshape); // rd extern from settings.h
+        outControl << "For model1, draw GF0 from unif: " << GF0 << " and shape: " << shape << endl;        
+        
+        // but I need to rescale the values retrieved from the dispersal kernel
+        // because they are very very small and they should sum up to 1 because I want 
+        // to empty hybFoo at each generation
+        
+        vector <double> GF_modifiers_by_dist;
+        double dGF_sum(0);
+        for(int i = 0; i < distance_list.size(); i++)   // one modifier by distance
+        {
+            double dGF = dispersalExpFunc(distance_list[i], shape);
+            dGF_sum += dGF;
+            GF_modifiers_by_dist.push_back(dGF);  // GF for distance
+        }
+        outControl << "GF modifiers drawn for each distance (before rescaling): " << endl;
+        for(auto i : GF_modifiers_by_dist)
+        {
+            outControl << i << "\t";
+        } 
+        // now rescale that they sum up to 1:
+        for_each(GF_modifiers_by_dist.begin(), GF_modifiers_by_dist.end(), [dGF_sum](double &n){ n = n/dGF_sum; });
+        outControl << endl << "GF modifiers drawn for each distance (after rescaling): " << endl;
+        for(auto i : GF_modifiers_by_dist)
+        {
+            outControl << i << "\t";
+        }             
+        // now, for all distances, draw from normal that has the mean GF_modifier[i]
+        vector <double> all_GF_modifiers;
+        double pGF_sum;
+        for(int i = 0; i < distance_list.size() ; i++ )
+        {
+            outControl << endl << "For distance: " << distance_list[i] << " (dGF = " << GF_modifiers_by_dist[i] << "), draw: " << endl;
+            for(int j = 0; j < nbr_pop_list[i] ; j++ )
+            {
+                double pGF = getFromNormal(GF_modifiers_by_dist[i], SD_GF_modifiers); // for all pop from the same distance, draw from normal
+                pGF = pGF > 0 ? pGF: 0.00001;
+                outControl << pGF << "\t";
+                all_GF_modifiers.push_back(pGF); // GF for pop
+                pGF_sum += pGF;
+            }
+        }
+        // again, ensure that they all sum up to 1
+        for_each(all_GF_modifiers.begin(), all_GF_modifiers.end(), [pGF_sum](double &n){ n = n/pGF_sum; });
+       
+        outControl << "After rescaling, here is the list of all GF modifiers: " << endl;
+        for(auto i: all_GF_modifiers)
+        {
+            outControl << i << "\t";
+        }                 
+        outControl << endl;       
+       
+        // hyb1 -> the closest of the sea
+        // the GF modifiers are sorted -> print in a file
+        for(int nHyb = 1; nHyb < nHybPop + 2 ; nHyb++) // NOW DEFINE FOR EACH HYBRID POP THAT IS NOT hybFoo (hybrid_)
+        {         
+            migToHyb = "hybrid_to_hybrid" + to_string(nHyb); 
+            double current_dispersal = GF0 * all_GF_modifiers[nHyb-1];
+            simu_parameters[migToHyb] = to_string(current_dispersal);
+            allParametersLine += ","+migToHyb +"="+simu_parameters[migToHyb];            
+            outControl << "For param: " << migToHyb << ", drawn from prior: " << simu_parameters[migToHyb] << endl;        
+        }        
+    }
+    // print the line with parameter values for ABC
+    string valueFile("simu/"+model+"/"+simIterN+"/"+model+"_"+simIterN+"_parametersValues.txt");
+    ofstream valueOut;
+    valueOut.open(valueFile.c_str());
+    valueOut << allParametersLine;
+    valueOut.close();
+    return;
+}
+
+/* PREPARE FILE FOR ADMIXEM */
+
+void Simu::createConfigFile() 
+{
+    //"simu/model0/1_17/model0_simu1_17_config.cfg"
+    string outConfigFile("simu/"+model+"/"+simIterN+"/"+model+"_"+simIterN+"_config.cfg");
+    ofstream outConf;
+    outConf.open(outConfigFile.c_str());
+    // set files and folder
+    settings["OutputFolder"] = "simu/"+model+"/"+simIterN+"/admixOut";
+    settings["GeneFile"] = "data/"+model+"/"+model+"_"+geneFile;
+    settings["PhenotypeFile"] = "data/"+model+"/"+model+"_"+phenoFile;
+    settings["NaturalSelection"] = "data/"+model+"/"+model+"_"+natSelFile;
+    settings["SexualSelection"] =  "data/"+model+"/"+model+"_"+sexSelFile;
+    // sample only the last generation !!! -> 1 output file only
+    
+    settings["samplefreq"] = simu_parameters["generations"];          
+    
+    
+    // update the "settings" map with the values from "parameters" of the Simu object
+    for(auto entry: simu_parameters)  // iterate over the map of parameters -> update the settings with parameter for this model
+    {
+        settings[entry.first] = entry.second;
+    }
+  //  cout << "WRITE CONFIG\n" ;
+    for(auto entry_set: settings)  // iterate over the map of parameters -> update the settings with parameter for this model
+    {
+    //    cout  << entry_set.first << "\t=\t" << entry_set.second << endl;;
+        outConf << entry_set.first << "\t=\t" << entry_set.second << endl;;
+    }    
+    cout << "Configuration file for Admixem written in: " << outConfigFile << endl;
+    return;
+}
+   
+    
+int Simu::launchAdmixem() const 
+{           
+// with system call will return int x = system() -> x = 0 if no error durring Admixem
+// count as iteration of simu for this model only if return 0
+//admixemp should be in PATH !!!
+    int x;
+    int foo; // avoid warning
+    // ensure now folder with same name before running admixem 
+    string admixOutFolder = "simu/"+model+"/"+simIterN+"/admixOut";
+    string command = "rm -rf " + admixOutFolder;
+    x = system(command.c_str());    
+    string outConfigFile("simu/"+model+"/"+simIterN+"/"+model+"_"+simIterN+"_config.cfg");
+    command = "admixemp " + outConfigFile + " > admixem_out.txt" ;
+    cout << "...... Launch Admixem: " << endl << command << endl;
+    // run Admixem here:
+    x = system(command.c_str());
+    //clean first two generations that are always written
+    command = "rm -rf " + admixOutFolder + "/Gen1_*";
+    foo= system(command.c_str());
+    command = "rm -rf " + admixOutFolder + "/Gen2_*";
+    foo = system(command.c_str());
+    // clean files that are neither markers nor genes 
+   command = "rm -f `ls -d -1 "+admixOutFolder +"/* | grep -v '_genes\\|_markers'`";
+   foo = system(command.c_str());       
+    return x;
+}
+
+void Simu::writeSummaryStat()   // if set as constant, complain if access simu_parameters["generations"]
+{
+    // result of the last generation will look like:
+    //simu/model0/simu100/admixOut/Gen300_markers.txt
+    int fileNbr = stoi (simu_parameters["generations"]);     
+    
+    cout << "simu/"+model+"/"+simIterN+"/admixOut/Gen"+to_string(fileNbr)+"_markers.txt" << endl;
+
+    cout << "simu/"+model+"/"+simIterN+"/admixOut/Gen"+to_string(fileNbr)+"_genes.txt" << endl;
+    
+    string last_gen_markersF("simu/"+model+"/"+simIterN+"/admixOut/Gen"+to_string(fileNbr)+"_markers.txt");
+    string last_gen_genesF("simu/"+model+"/"+simIterN+"/admixOut/Gen"+to_string(fileNbr)+"_genes.txt");
+
+    writeSummaryTables(last_gen_genesF, last_gen_markersF, simIterN);
+    
+   // writeSummaryTables("my_genes.txt", "my_markers.txt", simIterN); //////////////////////////////////////////////
+    
+//void writeSummaryTables(string admixGeneFile, string admixMarkerFile, string simIterN)    
+    
+    writeChromosomeBlocks(simIterN);
+    return;
+}
+
+
+/* COMMODITY FUNCTION, VARIA */
+void Simu::printSimu(ostream &stream) const
+{
+    stream << "Simu nbr:\t" << simIterN << endl;
+    stream << "For model:\t" <<  simu_model.getModelName() << endl;
+    stream << "Parameter settings for this simulation:" << endl;
+    for(auto entry: simu_parameters)  // iterate over the map of parameters
+    {
+        stream << entry.first << "\t" << entry.second << endl;
+    }
+    return;
+}
+
+Simu::~Simu(){}
+
+//********************************************************* NOT CLASS MEMBER FUNCTIONS 
+
+ostream &operator<<( ostream &stream, Simu const &simu)
+{
+    simu.printSimu(stream) ;
+    return stream;
+}

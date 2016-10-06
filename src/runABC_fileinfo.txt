@@ -1,0 +1,30 @@
+* => indicates folder
+- => indicates files and executables
+
+
+*WORKING_DIR
+  - runABC
+  - createGeneralSettings
+  * data
+    - markers.txt
+    - rec.txt
+    - chromo.txt
+    * <model_name>
+      - <model_name>_genes.txt
+      - <model_name>_phenotype.txt
+      - <model_name>_sexSel.txt
+      - <model_name>_natSel.txt     
+      
+  * simu
+    * <model_name>
+      * <thread#>_<sim#>
+        - <thread#>_<sim#>_config.cfg
+        * admixOut
+          - Gen#_markers.txt
+          - Gen#_genes.txt
+          
+          
+  * src          
+    - source files for runABC
+    * createGeneralSettings
+        - source file createGeneralSettings (must be compiled separately)

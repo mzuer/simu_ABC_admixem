@@ -1,0 +1,537 @@
+#include <iostream>
+#include <fstream>
+#include <string.h>
+#include <math.h>
+#include <string>
+#include "maths.h"
+#include "settings.h"
+
+#pragma once
+
+using namespace std;
+
+// RETRIEVE VARIABLES DEFINED ELSEWHERE FOR MATH FUNCTIONS
+extern Normal NormalGen; 
+extern Uniform UniformGen;
+extern double nRandSeed;
+
+// RETRIEVE VARIABLES FROM "settings.h"                     => THIS IS WHAT WILL CHANGED FROM ONE MODEL TO ANOTHER !!!
+extern std::string geneFile;               // file names
+extern std::string recombFile;
+extern std::string markerFile;
+extern std::string phenotypeFile;
+extern std::string sexualSelFile;
+extern std::string naturalSelFile;
+extern std::string configFile;
+extern int numbersOfMarkers;               // markers file
+extern int chromoSize;
+extern int nChromo;
+extern float pop1AlleleFreqAvg;
+extern float pop1AlleleFreqStdDev;
+extern float pop2AlleleFreqAvg;
+extern float pop2AlleleFreqStdDev;
+extern int nRecombMeiosis;          // recombination file
+extern int factSamplePoint;
+extern int numThreads;         // configuration file - general settings
+extern double randomSeed;
+extern std::string uniformRec;
+extern std::string igMarkerFreq;
+extern std::string dumpNatSel;
+extern std::string outFolder;
+extern std::string pop1Name; // configuration file - pop info
+extern std::string pop1Label;
+extern std::string pop2Name;
+extern std::string pop2Label;
+extern std::string hybName;
+extern int pop1InitSize;
+extern int pop2InitSize;
+extern int pop1LimitSize;
+extern int pop2LimitSize;
+extern float maleRatio1;
+extern float maleRatio2;
+extern int hybLimitSize;
+extern std::string migrationOnlyGen1;  // configuration file - migration
+extern std::string binomMigRate;
+extern float pop1ToHyb;
+extern float pop2ToHyb;
+extern float hybToPop1;
+extern float hybToPop2;
+extern float pop1ToPop2;
+extern float gen1_pop1ToHyb;
+extern float gen1_pop2ToHyb;
+extern int avgFemGamete;           // configuration file - female kids and mate choice
+extern float stdFemGamete;
+extern std::string kidsFunc;
+extern int maleSampling;
+extern int nGen;        // configuration file - generations, sampling and output
+extern int sampFreq;
+extern string markerOut;
+extern string gensToSampleFile;
+
+// FUNCTION PROTOTYPES
+void UIMakeNewMarkerFile();
+void UIGenerateRecombinationFreqMap(int nChromosomes, double nLargestChromSize, double * pChromosomeSizes, double * pCentromerePos);
+void UIGenerateGeneFile();
+void UIGenerateNaturalSelFile();
+void UIGenerateSexualSelFile();	
+void UIGeneratePhenoFile();
+void UIGenerateConfigFile();
+
+/*******************************
+****** MAIN FUNCTION HERE ******
+********************************/
+int main (int argc, char * const argv[]) {
+    // ~~ Generate the marker file and the recombination files (called within the function)
+    UIMakeNewMarkerFile(); 
+
+    // ~~ Generate the gene selection file
+	UIGenerateGeneFile();
+	
+	// ~~ Generate the sexual selection file
+	UIGenerateSexualSelFile();
+
+	// ~~ Generate the natural selection file
+	UIGenerateNaturalSelFile();
+	
+	// ~~ Generate the phenotype file
+	UIGeneratePhenoFile();
+	
+	// ~~ Finally, generate the configuration file
+	UIGenerateConfigFile();
+
+    return 0;
+}
+
+/*******************************
+***** FUNCTION DEFINITIONS *****
+********************************/
+/*
+ * Fonction to generate the marker file
+ */
+void UIMakeNewMarkerFile() 
+{
+    //~~ Choice of some parameters for our simulations
+    double nRandSeed = randomSeed;                                // random seed to repeat the simulation
+    int nHaploidChromosomeNum (nChromo);                  // number of haploid chromosome -> say 4 since B nigra 8n
+    double nChromosomeSize (chromoSize);                   // size of the chromosome
+ 
+
+    int nTotalMarkers (numbersOfMarkers);                      // total number of markers
+    double nPop1AvgAlleleFreq (pop1AlleleFreqAvg);                //average freq. of the more abundant allele in pop 1 (0.5-1.0)
+    double nPop1AvgAlleleFreqStdDev (pop1AlleleFreqStdDev);          //std. dev. of the freq of the more abundant allele in pop 1 (0-0.5)
+    double nPop2AvgAlleleFreq (pop2AlleleFreqAvg);                //average freq. of the more abundant allele in pop 2 (0.5-1.0)
+    double nPop2AvgAlleleFreqStdDev (pop2AlleleFreqStdDev);          //std. dev. of the freq of the more abundant allele in pop 2 (0-0.5)
+    string sOutFile (markerFile);   // name of output file
+    
+    //double nCentromerePos;
+    int nCurrChromosome (0);                        // index for filling chromosome size array
+
+    // ~~ Set random seed
+    Random::Set(nRandSeed);
+
+   
+    double * pChromosomeSizes = new double[nHaploidChromosomeNum];           // ~~ declaration was in def.h
+	double * pCentromerePos = new double[nHaploidChromosomeNum];	
+	
+	// ~~ Initialize the size of the chromosomes -> all the same size
+	while(nCurrChromosome < nHaploidChromosomeNum)
+	{
+		pChromosomeSizes[nCurrChromosome] = nChromosomeSize;	
+		/*
+		Now do not allow users to move centromere any more since centromere can be simply a marker, and it's forced 
+		to the end of the chromosome.
+        */
+		pCentromerePos[nCurrChromosome] = nChromosomeSize;    // ~~ as implemented, not changed 
+		nCurrChromosome++;
+    }	
+		
+	// now prepare file:
+	//Figure out how to distribute the markers
+	
+	ofstream fOutFile;
+	fOutFile.open(sOutFile.c_str());
+	fOutFile << "HaploidChromosomeNum = " << nHaploidChromosomeNum << endl; //Write haploid n.
+	fOutFile << "RandomSeed = " << nRandSeed << endl; //Write random seed n.
+	fOutFile << "Pop1AvgAlleleFreq = " << nPop1AvgAlleleFreq << endl; //
+	fOutFile << "Pop1AvgAlleleFreqStdev = " << nPop1AvgAlleleFreqStdDev << endl; //
+	fOutFile << "Pop2AvgAlleleFreq = " << nPop2AvgAlleleFreq << endl; //
+	fOutFile << "Pop2AvgAlleleFreqStdev = " << nPop2AvgAlleleFreqStdDev << endl; //
+		
+		
+	
+	double nSumLens = fnSum(pChromosomeSizes , nHaploidChromosomeNum); // get sum of chromosome lengths (~~ defined in maths.cpp)
+	double nLargestChromSize = 0;
+	
+	for (int i=0;  i < nHaploidChromosomeNum; i++) { // generate markers chromosome by chromosome
+		
+		double nChrLen = pChromosomeSizes[i];
+		int	   nNumMarkers = (int) ceil( ((double) nTotalMarkers) * (nChrLen / nSumLens));
+		
+		nLargestChromSize = (nLargestChromSize < nChrLen)? nChrLen : nLargestChromSize;
+		
+		fOutFile << ":chr " << (i+1) << "\tlen = " << nChrLen << "\tcentromere = " << pCentromerePos[i] << endl; // chromosome number
+		fOutFile << "\nNum\tPosition Percentage\tPosition Abs.\tFreq. Pop 1\tFreq. Pop 2\n" ;
+		
+		double * pPos = new double[nNumMarkers];
+		for (int j=0;j<nNumMarkers;j++) {
+			pPos[j] = UniformGen.Next(); // create random set of uniformly distributed markers
+		}
+		
+		//Sort markers according to position on chromosome:
+		
+		qsort (pPos , nNumMarkers , sizeof(double), fnCompare);
+		
+		for (int j=0;j<nNumMarkers;j++) { 
+			fOutFile << (j + 1);
+			fOutFile << '\t';
+			fOutFile << pPos[j] ;
+			fOutFile << '\t';
+			fOutFile << pPos[j] * nChrLen ;
+			fOutFile << '\t';
+			fOutFile << NormalExt(nPop1AvgAlleleFreq ,nPop1AvgAlleleFreqStdDev , 0.5, 1.0);         // ~~ defined in maths.cpp
+			fOutFile << '\t';
+			fOutFile <<  NormalExt( 1.0 - nPop2AvgAlleleFreq ,nPop2AvgAlleleFreqStdDev , 0, 0.5);
+			fOutFile << endl; 
+		}
+		
+		delete[] pPos;
+	}
+	
+	fOutFile.close();
+	
+    // ~~ Generate the recombination probabilities
+	UIGenerateRecombinationFreqMap(nHaploidChromosomeNum , nLargestChromSize, pChromosomeSizes, pCentromerePos); 
+}
+
+
+/*
+ * Fonction to generate recombination map
+ */
+void UIGenerateRecombinationFreqMap(int nChromosomes, double nLargestChromSize, double * pChromosomeSizes, double * pCentromerePos) 
+{ 
+	double nSumLens = fnSum(pChromosomeSizes , nChromosomes); // get sum of chromosome lengths
+    // ~~ Use uniform probabilities rate
+	char nRate(1); //1 - uniform, 2 - parabola  // ~~ for the moment we never change this !!!
+    // ~~ Set the total expected recombination events in the whole genome per meiosis "4n should be fine" -> 16
+    double nTotalExpectedRecombPerMeiosis(nRecombMeiosis);
+    // ~~ Number of rec points
+	double nTotalSamplePoint (factSamplePoint * nChromosomes);  //How often to put a point. // ~~ -> was 20 in the original
+	//~~ Fold difference between female:male => set to 1, no diff
+    double nFemFold (1); // ~~ for the moment we never change this !!!
+	// ~~ Set output file name
+	string sOutFile(recombFile);
+
+	// now prepare file:	~~ => THIS HAS MOSTLY NOT BEEN CHANGED
+	ofstream fOutFile;
+	fOutFile.open(sOutFile.c_str());
+	
+	for (int i=0;i< nChromosomes;i++) {		
+		int nChrIndex =i;
+		double nChrLen = pChromosomeSizes[nChrIndex];
+		double nCentromerePos =  pCentromerePos[nChrIndex];	
+		
+		int	   nNumSamplePoints = (int) ceil( ((double) nTotalSamplePoint) * (nChrLen / nSumLens));
+
+		double nArm1Len =  nCentromerePos;
+		double nArm2Len =  nChrLen - nCentromerePos;
+			
+		fOutFile << ":chr " << (nChrIndex+1) << endl;
+		
+		double nExpectedMaleRecPerMeiosisArm1 = nTotalExpectedRecombPerMeiosis * ( nArm1Len/nSumLens) / 2;
+		double nExpectedMaleRecPerMeiosisArm2 = nTotalExpectedRecombPerMeiosis * ( nArm2Len/nSumLens) / 2;
+		double nExpectedFemaleRecPerMeiosisArm1 = nTotalExpectedRecombPerMeiosis * nFemFold * ( nArm1Len/nSumLens) / 2;
+		double nExpectedFemaleRecPerMeiosisArm2 = nTotalExpectedRecombPerMeiosis * nFemFold * ( nArm2Len/nSumLens) / 2;
+		double nExpectedRecPerMeiosisArm1 = ( nExpectedMaleRecPerMeiosisArm1 + nExpectedFemaleRecPerMeiosisArm1 ) / 2;
+		double nExpectedRecPerMeiosisArm2 = ( nExpectedMaleRecPerMeiosisArm2 + nExpectedFemaleRecPerMeiosisArm2 ) / 2;
+		
+		fOutFile << ":ExpectedMaleRecPerMeiosisArm1 = " << nExpectedMaleRecPerMeiosisArm1 << endl;
+		fOutFile << ":ExpectedMaleRecPerMeiosisArm2 = " << nExpectedMaleRecPerMeiosisArm2 << endl;
+		fOutFile << ":ExpectedFemaleRecPerMeiosisArm1 = " << nExpectedFemaleRecPerMeiosisArm1 << endl;
+		fOutFile << ":ExpectedFemaleRecPerMeiosisArm2 = " << nExpectedFemaleRecPerMeiosisArm2 << endl;
+		fOutFile << "\tmale"<<"\tmale_accumulative" << "\tfemale\tfemale_accumulative\tMale_recombination_fraction\tFemale_recombination_fraction\tAvg_recombination_fraction\tKosambi_male_interval\tKosambi_male_pos\tKosambi_female_interval\tKosambi_female_pos\tKosambi_both_interval\tKosambi_both_pos" << endl;
+	
+		std::map<double, double *>  mSamplePoints;
+
+		for (int j=0; j < nNumSamplePoints; j++) {
+			double nPos = nChrLen * UniformGen.Next(); // random position
+			double nDistanceFromCentromere = ( nPos - nCentromerePos ) / nLargestChromSize; //  distance from centromere standarized by the longest chromosome
+			nDistanceFromCentromere = (nDistanceFromCentromere >= 0 )? nDistanceFromCentromere: -nDistanceFromCentromere;
+			double nArmLen = (nPos > nCentromerePos)? nChrLen - nCentromerePos : nCentromerePos;
+			double nDistanceFromCentromereOnArm = (nPos > nCentromerePos)? (nPos - nCentromerePos)/nArmLen : (nCentromerePos - nPos)/nArmLen ;
+			double nProbAtPosMale(0.1); //~~ 
+			//~~ double nProbAtPosMale =  (nRate=='1')? 0.1 : pow(nParabolaA * nDistanceFromCentromere, 2); 
+			//double nProbAtPosFemale = nProbAtPosMale * nFemCorrA  + nFemCorrB;
+			double nProbAtPosFemale(0.1*nFemFold); //~~ 
+			//~~ double nProbAtPosFemale = (nRate=='1')? 0.1 * nFemFold : pow(nParabolaAFemale * nDistanceFromCentromere, 2) * nFemFold ; 
+			double * pProbs = new double[4];
+			pProbs[0] = NormalExt(nProbAtPosMale , nProbAtPosMale / 2, 0, 1);
+			//pProbs[1] = nMaxAvgRecombRate * pProbs[0] ;
+			pProbs[2] = NormalExt(nProbAtPosFemale , nProbAtPosFemale / 2, 0, 1);
+			//pProbs[3] = nMaxAvgRecombRate * pProbs[2] ;
+			if (mSamplePoints.find(nPos) == mSamplePoints.end()) {
+				mSamplePoints[nPos] = pProbs ;
+			}
+			else {
+				j--;
+				continue; // won't work because same position already exists.
+			}
+		}
+		double nMaleArm1Accum = 0;
+		double nFemaleArm1Accum = 0;
+		double nMaleArm2Accum = 0;
+		double nFemaleArm2Accum = 0;
+		
+		for (std::map<double,double *>::iterator it = mSamplePoints.begin(); it != mSamplePoints.end(); ++it) {
+			double nMaleAccum, nFemaleAccum;
+			if (it->first < nCentromerePos) { //on arm 1
+				nMaleArm1Accum += (it->second)[0];
+				nFemaleArm1Accum += (it->second)[2];
+			}
+			else {
+				 nMaleArm2Accum += (it->second)[0];
+				 nFemaleArm2Accum += (it->second)[2];
+			}
+		}
+		double nScaledMaleArm1Accum = 0;
+		double nScaledFemaleArm1Accum = 0;
+		double nScaledMaleArm2Accum = 0;
+		double nScaledFemaleArm2Accum = 0;
+
+		double nScaledMaleProb = 0;
+		double nScaledFemaleProb = 0;
+		
+		double nPrevScaledMaleArm1Accum =0;
+		double nPrevScaledFemaleArm1Accum =0;
+		double nPrevScaledMaleArm2Accum =0;
+		double nPrevScaledFemaleArm2Accum =0;
+		
+		double nKosambiMapDistance_male = 0;
+		double nKosambiMapDistance_female = 0;
+		double nKosambiMapDistance_both = 0;			
+		
+		double nKosambiMapPos_male = 0;
+		double nKosambiMapPos_female = 0;
+		double nKosambiMapPos_both = 0;
+		
+		double nRecombFraction_male = 0;
+		double nRecombFraction_female = 0;
+		double nRecombFraction_both = 0;
+
+		for (std::map<double,double *>::iterator it = mSamplePoints.begin(); it != mSamplePoints.end(); ++it) {
+			double nMaleAccum, nFemaleAccum;
+			if (it->first < nCentromerePos) { //on arm 1
+				nScaledMaleProb = (it->second)[0] / nMaleArm1Accum;
+				nScaledFemaleProb = (it->second)[2] / nFemaleArm1Accum;
+				nMaleAccum = nScaledMaleArm1Accum += nScaledMaleProb;
+				nFemaleAccum = nScaledFemaleArm1Accum += nScaledFemaleProb;
+				
+				 nRecombFraction_male = nExpectedMaleRecPerMeiosisArm1 * nScaledMaleProb  ;
+				 nKosambiMapPos_male += nKosambiMapDistance_male = 0.25 * log( (1+2 * nRecombFraction_male)/(1-2 * nRecombFraction_male) ) ;
+				 nRecombFraction_female = nExpectedFemaleRecPerMeiosisArm1 * nScaledFemaleProb ;
+				 nKosambiMapPos_female += nKosambiMapDistance_female = 0.25 * log( (1+2 * nRecombFraction_female)/(1-2 * nRecombFraction_female) ) ;
+			}
+			else {
+				nScaledMaleProb = (it->second)[0] / nMaleArm2Accum;
+				nScaledFemaleProb = (it->second)[2] / nFemaleArm2Accum;
+				nMaleAccum = nScaledMaleArm2Accum += nScaledMaleProb;
+				nFemaleAccum = nScaledFemaleArm2Accum += nScaledFemaleProb;
+				
+				nRecombFraction_male = nExpectedMaleRecPerMeiosisArm2 * nScaledMaleProb  ;
+				 nKosambiMapPos_male += nKosambiMapDistance_male = 0.25 * log( (1+2 * nRecombFraction_male)/(1-2 * nRecombFraction_male) ) ;
+				 nRecombFraction_female = nExpectedFemaleRecPerMeiosisArm2 * nScaledFemaleProb  ;
+				 nKosambiMapPos_female += nKosambiMapDistance_female = 0.25 * log( (1+2 * nRecombFraction_female)/(1-2 * nRecombFraction_female) ) ;
+			}
+			nRecombFraction_both = (nRecombFraction_male + nRecombFraction_female)/2;
+			nKosambiMapPos_both += nKosambiMapDistance_both = 0.25 * log( (1+2 * nRecombFraction_both)/(1-2 * nRecombFraction_both) ) ;
+			
+			fOutFile << setprecision (10) << it->first << '\t' << nScaledMaleProb << '\t' << nMaleAccum << '\t' << nScaledFemaleProb << '\t' << nFemaleAccum;
+			fOutFile << setprecision (10) << '\t' << nRecombFraction_male << '\t' << nRecombFraction_female << '\t' << nRecombFraction_both << '\t' << nKosambiMapDistance_male << '\t' << nKosambiMapPos_male << '\t' << nKosambiMapDistance_female << '\t' << nKosambiMapPos_female << '\t' << nKosambiMapDistance_both << '\t' << nKosambiMapPos_both << endl;
+		
+			double nPrevScaledMaleArm1Accum = nScaledMaleArm1Accum;
+			double nPrevScaledFemaleArm1Accum = nScaledFemaleArm1Accum;
+			double nPrevScaledMaleArm2Accum = nScaledMaleArm2Accum;
+			double nPrevScaledFemaleArm2Accum = nScaledFemaleArm2Accum;
+		}
+	}
+	fOutFile.close();
+}
+
+//Note that sex NEEDS to be specified in the phenotype file. The sex ratios in the configuration only acts as filters in generation 0. 
+//If your genetic and phenotypic settings for sex (say, only females are produced) cannot meet these sex ratio filters (say 0.5), then the program will not stop but try to create more individuals. 
+//For a typical XY organism, specify an imaginary male determining locus in the gene file:
+//name	Chromosome	position	Dominant Allele	Dominant Allele Value	Recessive Allele	Recessive Allele Value	Mode	Dominant Freq Pop1	Dominant Freq Pop2
+//chr10_3000000	10	3000000	A	1	a	0	Hemizygous	0.5	0.5
+
+//And then specify a phenotype called "Sex" (case-sensitive) in the phenotype file:
+//Phenotype	Formula
+//Sex		chr10_3000000
+
+/*
+ * ~~ Function to generate the gene file
+ */
+void UIGenerateGeneFile()
+{
+    string geneOutFile(geneFile);
+	ofstream fOutFile;
+	fOutFile.open(geneOutFile.c_str());
+	
+	fOutFile << "name\tChromosome\tposition\tDominant Allele\tDominant Allele Value\tRecessive Allele\tRecessive Allele Value\tMode\tDominant Freq Pop1\tDominant Freq Pop2" << endl; // header line
+	
+	fOutFile << "chr1_10\t1\t10\tA\t1\ta\t0\tHemizygous\t0.5\t0.5" << endl; 
+	// needed to start simulations !!! chr1_10 as foo (if change, change also in phenoFile)
+	
+	// ~~ within the script -> print the basis as needed for running simulation
+	// ~~ then if needed in another script change this to fine-tune selection
+	
+    return;
+}
+
+/*
+ * ~~ Function to generate the natural selection file	
+ */
+// Example:
+    //Population	Gen	Selection
+    //nigra	-1	1
+    //rapa	-1	1
+    //hyb	-1	1
+    // -1 in Gen => apply to all generation
+    // Selection => probability between 0 and 1
+void UIGenerateNaturalSelFile()
+{
+    string naturalOutFile(naturalSelFile);
+	ofstream fOutFile;
+	fOutFile.open(naturalOutFile.c_str());
+	fOutFile << "Population\tGen\tSelection" << endl;  //~~ print the header
+	fOutFile << pop2Name << "\t-1\t1" << endl;                                
+	fOutFile << pop1Name <<"\t-1\t1" << endl; 
+	fOutFile << hybName << "\t-1\t1" << endl; 
+    return;
+}
+
+
+/*
+ * ~~ Function to generate the sexual selection file	
+ */
+// Example:
+    //Population	Gen	Selection
+    //nigra	-1	1
+    //rapa	-1	1
+    //hyb	-1	1
+    // -1 in Gen => apply to all generation
+    // Selection => probability between 0 and 1
+void UIGenerateSexualSelFile()
+{
+    string sexOutFile(sexualSelFile);
+	ofstream fOutFile;
+	fOutFile.open(sexOutFile.c_str());
+	
+	fOutFile << "Population\tGen\tSelection" << endl;  //~~ print the header
+	fOutFile << pop2Name << "\t-1\t1" << endl;                                
+	fOutFile << pop1Name <<"\t-1\t1" << endl; 
+	fOutFile << hybName << "\t-1\t1" << endl; 
+	
+    return;
+}
+	
+/*	
+ * ~~ Function to generate the phenotype file
+ */
+//And then specify a phenotype called "Sex" (case-sensitive) in the phenotype file:
+//Phenotype	Formula
+//Sex		chr10_3000000
+
+void UIGeneratePhenoFile()
+{
+    string phenoOutFile(phenotypeFile);
+	ofstream fOutFile;
+	fOutFile.open(phenoOutFile.c_str());
+	
+	fOutFile << "Phenotypes\tFormula" << endl;   // ~~ print the header
+	fOutFile << "Sex\tchr1_10" << endl;        // needed to start simulations !!! chr1_10 as foo (if change, change also in geneFile)
+	
+    return;
+}   
+	
+/*	
+ * ~~ Function to generate the final configuration file
+ */
+void UIGenerateConfigFile()
+{
+    string configOutFile(configFile);
+	ofstream fOutFile;
+	fOutFile.open(configOutFile.c_str());
+	
+	// GENERAL PARAMETERS
+    fOutFile << "RandomSeed\t=\t" << randomSeed << endl;    //Specify the same random seed to repeat the simulation.
+    fOutFile << "NumThreads\t=\t" << numThreads << endl;
+    fOutFile << "UseUniformRec\t=\t" << uniformRec << endl;    
+    // Ignore marker freq recomb file, make them reciprocally fixed in the parental pops
+    fOutFile << "IgnoreMarkerFreq\t=\t" << igMarkerFreq << endl; 
+    fOutFile << "DumpNatSelProb\t=\t" << dumpNatSel << endl;
+    
+    // FILE AND FOLDER NAMES
+    fOutFile << "MarkerFile\t=\t" << markerFile << endl;   // Marker File Containing marker info.
+    fOutFile << "MarkerProbFile\t=\t" << recombFile << endl;   // Recombination fraction file 
+    fOutFile << "GeneFile\t=\t" << geneFile << endl;  // Gene file, which specifies genetic loci underlying phenotypes
+    fOutFile << "PhenotypeFile\t=\t" << phenotypeFile << endl; // Phenotype File, specifies formulae from which phenotypes are calculated 
+    fOutFile << "OutputFolder\t=\t" << outFolder << endl;  // where should the program spit files into
+    fOutFile << "NaturalSelection\t=\t" << naturalSelFile << endl;
+    fOutFile << "SexualSelection\t=\t" << sexualSelFile << endl;
+    
+    // POP INFO
+    fOutFile << "pop1_name\t=\t" << pop1Name << endl;   // name parental pop 1
+    fOutFile << "pop1_ancestry_label\t=\t" << pop1Label << endl;    // label parental pop1, only one character allowed
+    fOutFile << "pop2_name\t=\t" << pop2Name << endl;  // name parental pop 2
+    fOutFile << "pop2_ancestry_label\t=\t" << pop2Label << endl;    // label parental pop2, only one character allowed
+    fOutFile << "hybrid_name\t=\t" << hybName << endl;          // name hybrid pop
+    fOutFile << "pop1_init_size\t=\t" << pop1InitSize << endl;   // how many individuals to create in the initial parental pop 1
+    fOutFile << "pop2_init_size\t=\t" << pop2InitSize << endl;   // how many individuals to create in the initial parental pop 2
+    fOutFile << "pop1_size_limit\t=\t" << pop1LimitSize << endl;  // size limit pop 1
+    fOutFile << "pop2_size_limit\t=\t" << pop2LimitSize << endl;  // size limit pop 2
+    fOutFile << "hybrid_size_limit\t=\t" << hybLimitSize << endl;    // size limit hybrid pop
+    fOutFile << "pop1_male_ratio\t=\t" << maleRatio1 << endl;  // sex ratio pop 1
+    fOutFile << "pop2_male_ratio\t=\t" << maleRatio2 << endl;   // sex ratio pop 2
+    // gene flow only happen before generation 1? if no, the following parameters of gene flow will be used for later generations
+    
+    // MIGRATION
+    fOutFile << "migration_only_first_gen\t=\t" << migrationOnlyGen1 << endl;   
+
+    // In generation 0, the hybrid population is empty. 
+    // Hybrid populations can be filled from individuals from parental (or other hybrid populations) at any time after gen 0 with migration. 
+    // Refers to migration from parental species 1. It can be set to have migration occur at a different generation with "gen10_", for ex.
+    fOutFile << "gen1_pop1_to_hybrid\t=\t" << gen1_pop1ToHyb << endl;
+    fOutFile << "gen1_pop2_to_hybrid\t=\t" << gen1_pop2ToHyb << endl;
+
+    // pop1_to_hybrid = 100 #Number of individuals from parent 1 to hybrid population 0 each generation (continuous migration). 
+    // If you omit any pairs of populations, the program assume that migration between those populations is zero. 
+    // It is also possible to specify migration rates instead of migration of a set number of individuals. 
+    // This can be set with "UseBinomMigrateRate = yes" and then specifying rates for these values
+    fOutFile << "UseBinomMigrateRate\t=\t" << binomMigRate << endl;
+    fOutFile << "pop1_to_hybrid\t=\t" << pop1ToHyb << endl;     // number of individuals from pop1 to hybrid zone in each gen.
+    fOutFile << "pop2_to_hybrid\t=\t" << pop2ToHyb << endl;
+    fOutFile << "hybrid_to_pop1\t=\t" << hybToPop1 << endl;
+    fOutFile << "hybrid_to_pop2\t=\t" << hybToPop2 << endl;
+    fOutFile << "pop1_to_pop2\t=\t" << pop1ToPop2 << endl;
+
+    // FEMALE: KIDS AND MALE CHOICE
+    fOutFile << "avg_female_gamete\t=\t" << avgFemGamete << endl;
+    fOutFile << "std_female_gamete\t=\t" << stdFemGamete << endl;
+    // kids_per_female_func = Poisson #This can be set to Poisson or left blank. 
+    // If Poisson, the mean is set to the expected offspring per female given the carrying capacity. 
+    // If blank, offspring number is normally distributed with the mean being the same as Poisson and variance is 1/4 of the mean.
+    fOutFile << "kids_per_female_func\t=\t" << kidsFunc << endl;
+    fOutFile << "SampleMate\t=\t" << maleSampling << endl; // During mate choice, how many males on average does each female sample?
+
+    // GENERATION AND SAMPLING
+    fOutFile << "generations\t=\t" << nGen << endl;     // how many generations to simulate? 
+    fOutFile << "samplefreq\t=\t" << sampFreq << endl; // write result files every 'x' gen. Generation 0, 1 and 2 will always be written.
+    // Turn off MarkerOutput to increase speed. If On, output genotypes for each individual at each marker for all the specified generations.
+    fOutFile << "MarkerOutput\t=\t" << markerOut << endl; // On or Off
+    fOutFile << "samplegens\t=\t" << gensToSampleFile << endl;
+    // samplegens = samplegens.txt 
+    // In addition to generations specified by samplefreq, output the generation range specified in this file (format example: 100\t150\n)	
+	
+    return;
+}   
+	
+	

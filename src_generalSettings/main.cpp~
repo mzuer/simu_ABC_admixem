@@ -1,0 +1,121 @@
+#include <iostream>
+#include <getopt.h>
+#include <string>
+#include <vector>
+#include <stdlib.h>     /* exit, EXIT_FAILURE */
+#include <cstdlib> //atof
+#include "generateFiles.h"
+
+using namespace std;
+
+//////////// WARNING: COMPILE WITH C++11 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// by default print in <currentdirectory>/data/x [x: markers.txt, rec.txt, chromo.txt]
+
+//================================================================================ CUSTOM SETTINGS HERE
+/* SET PARAMETERS IF NEEDED -> see Admixem manual
+ * shared across files: declared extern in generateFiles.h */
+double randomSeed;
+int numbersOfMarkers(5);                // FV: 40000
+//int chromoSize(500);                     // FV: 5000000
+vector <int> allChromoSize = {200,100, 200}; // <= SET HERE THE CHROMOSOMES THAT YOU WANT AND THEIR SIZE !!!!!
+int nChromo = allChromoSize.size();
+float pop1AlleleFreqAvg(0.8);            // 0.5-1
+float pop1AlleleFreqStdDev(0.1);         // 0-0.5
+float pop2AlleleFreqAvg(0.8);            // 0.5-1
+float pop2AlleleFreqStdDev(0.1);         // 0-0.5
+int nRecombMeiosis(32);                  // recombination file  //4n => 1 per arm
+int factSamplePoint(20);                
+//======================================================================================================
+
+//genome file passed in paramters should like data/Bnigra_positions.txt
+//text file with in the 1st column chromosome ID, 2nd column start position of the gene
+//chromosome length is computed as last position on the chromosome + 500 bp
+//centromer is set chromosome length/2 (integer value) -> to see if ok because Admixem set it at last position TODO
+
+int main (int argc, char * const argv[]) 
+{
+
+    string genomeF;
+    int option_char;
+    bool defaultRun(false), asAdmixem(false), help(false);
+    srand (time(NULL));
+    randomSeed = stod("0."+to_string(rand())); // compile with c++11 !!!
+        
+    // RETRIEVE FROM COMMAND LINE
+    // if -A    => create files as Admixem did; ignored if -g is present
+    // if -g    => pass the genome file: 
+    // if -s    => random seed (between 0 and 1), otherwise default based on time
+    // if -d    => run with default data and parameters (genomeF = "../data/test_pos.txt"and randomSeed based on time) 
+    //             -> used for demo and debug
+    // if -h    => help, if present ignore all other arguments
+    
+    while ((option_char = getopt (argc , argv, "Ahdg:s:")) != -1)
+    {
+        switch (option_char)
+        {  
+            case 'A': asAdmixem = true; break;
+            case 'h': help = true; break;
+            case 'g': genomeF = optarg; break;
+            case 's': randomSeed = atof(optarg);break;
+            case 'd': defaultRun = true;break;          // default, other values passed in command line are ignored
+        }
+    }
+    
+    if(argc == 1 || help)
+    {
+        cout << "... HELP - Create data for runABC ... " << endl;
+        cout << "... -A => create files as Admixem did; ignored if -g is present." << endl;
+        cout << "... -g => path to marker positions to create data." << endl;
+        cout << "... -s => random seed (between 0 and 1), otherwise default based on time." << endl;
+        cout << "... -d => run with default data and parameters (genomeF = \"data/test_pos.txt\"and randomSeed based on time)" << endl;
+        cout << "          (-> used for demo and debug) " << endl;
+        cout << "... -h => help, if present ignore all other arguments and print the help." << endl;
+        exit(EXIT_SUCCESS);    
+    }
+    if(defaultRun)
+    {
+        //genomeF = "../data/test_pos.txt";
+        genomeF = "data/Bnigra_positions.txt";   // FV: uncomment   
+        srand (time(NULL));
+        randomSeed = stod("0."+to_string(rand())); // compile with c++11 !!!
+    }
+    if(randomSeed < 0 || randomSeed > 1)
+    {
+        cout << "Invalid seed (must be between 0 and 1) [default: 0.2]" << endl;
+        exit(EXIT_FAILURE);
+    }
+    
+    // retrieve number of chromosomes from position file
+    if(!genomeF.empty()
+    {   
+        string command("cut -f1 " + genomeF +" | sort|uniq|wc -l");   
+        string result;
+	    FILE *in;
+	    char buff[512];
+	    if(!(in = popen(command.c_str(), "r"))){
+            cout << "Could not open file with marker positions !" << endl;
+            exit(EXIT_FAILURE);
+	    }
+	    while(fgets(buff, sizeof(buff), in)!=NULL){
+		    result += buff;
+	    }
+	    nChromo = stoi(result);
+	    pclose(in);	
+	}        
+    string command("mkdir data");
+    int foo;
+    foo = system(command.c_str());
+    if(genomeF.empty() && asAdmixem)
+    {
+        makeAdmixemFiles();   // generates "random" marker and recombination files as defined by Admixem
+
+    } else 
+    {
+        makeCustomFiles(genomeF);     // create those files using custom positions as in nigra GFF
+    }
+    
+    return 0;
+}
+
+
+
